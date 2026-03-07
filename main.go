@@ -1,34 +1,26 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
-	"sync"
+	"os"
+
+	_ "github.com/lib/pq" // Import the Postgres driver
 )
 
-// FlagStore holds our feature flags in memory safely
-type FlagStore struct {
-	sync.RWMutex
-	flags map[string]bool
-}
+var db *sql.DB
 
-var store = &FlagStore{
-	flags: make(map[string]bool),
-}
-
-// FlagResponse is the JSON structure we return
 type FlagResponse struct {
 	Feature string `json:"feature"`
 	Enabled bool   `json:"enabled"`
 }
 
 func main() {
-	// Seed some initial data
-	store.flags["new_dashboard"] = true
-	store.flags["beta_checkout"] = false
+	initDB()
+	defer db.Close()
 
-	// Define our HTTP routes
 	http.HandleFunc("/flag", getFlagHandler)
 
 	log.Println("Starting feature flag server on :8080...")
@@ -37,7 +29,41 @@ func main() {
 	}
 }
 
-// getFlagHandler handles GET /flag?name=feature_name
+func initDB() {
+	var err error
+	// Read the connection string from the environment variable set by Docker Compose
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		// Fallback for local testing outside of Docker
+		connStr = "postgres://flag_user:supersecretpassword@localhost:5432/flag_db?sslmode=disable"
+	}
+
+	db, err = sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatalf("Failed to connect to DB: %v", err)
+	}
+
+	if err = db.Ping(); err != nil {
+		log.Fatalf("Failed to ping DB: %v", err)
+	}
+
+	// For learning purposes, we'll auto-create the table and insert a dummy row.
+	// In a real app, you'd use a database migration tool (like golang-migrate).
+	createTableQuery := `
+	CREATE TABLE IF NOT EXISTS feature_flags (
+		name VARCHAR(255) PRIMARY KEY,
+		enabled BOOLEAN NOT NULL
+	);
+	INSERT INTO feature_flags (name, enabled) VALUES ('new_dashboard', true) ON CONFLICT DO NOTHING;
+	INSERT INTO feature_flags (name, enabled) VALUES ('beta_checkout', false) ON CONFLICT DO NOTHING;
+	`
+	_, err = db.Exec(createTableQuery)
+	if err != nil {
+		log.Fatalf("Failed to initialize database schema: %v", err)
+	}
+	log.Println("Database initialized successfully!")
+}
+
 func getFlagHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -50,14 +76,19 @@ func getFlagHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Safely read from the map
-	store.RLock()
-	isEnabled, exists := store.flags[featureName]
-	store.RUnlock()
-
-	if !exists {
-		http.Error(w, "Unknown feature flag", http.StatusNotFound)
-		return
+	var isEnabled bool
+	// Query the database for the specific flag
+	err := db.QueryRow("SELECT enabled FROM feature_flags WHERE name = $1", featureName).Scan(&isEnabled)
+	
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// If the flag doesn't exist, we generally default to false to be safe
+			isEnabled = false 
+		} else {
+			log.Printf("Database error: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	response := FlagResponse{

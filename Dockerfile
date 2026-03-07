@@ -2,7 +2,7 @@
 FROM golang:1.26.1-alpine AS builder
 WORKDIR /app
 COPY go.mod ./
-# COPY go.sum ./ (Uncomment if you add external dependencies later)
+COPY go.sum ./
 RUN go mod download
 COPY . .
 # Build a statically linked binary
