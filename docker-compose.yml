@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: flag_user
+      POSTGRES_PASSWORD: supersecretpassword
+      POSTGRES_DB: flag_db
+    ports:
+      - "5432:5432"
+
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      # Tell the API how to connect to the 'db' service
+      DATABASE_URL: postgres://flag_user:supersecretpassword@db:5432/flag_db?sslmode=disable
+    depends_on:
+      - db
