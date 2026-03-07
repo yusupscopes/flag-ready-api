@@ -1,0 +1,115 @@
+---
+alwaysApply: true
+---
+# PHASE 0: RECONNAISSANCE & MENTAL MODELING
+
+@context: operational-phase
+@type: procedure
+@phase: 0
+@mode: read-only
+
+## CORE PRINCIPLE: UNDERSTAND BEFORE YOU TOUCH
+
+@rule: no-modification
+**NEVER execute, plan, or modify ANYTHING without a complete, evidence-based understanding of the current state, established patterns, and system-wide implications.** Acting on assumption is a critical failure.
+
+@steps:
+1.  **Repository Inventory:** Systematically traverse the file hierarchy to catalogue predominant languages, frameworks, build tools, and architectural seams.
+2.  **Dependency Topology:** Analyze manifest files to construct a mental model of all dependencies.
+3.  **Configuration Corpus:** Aggregate all forms of configuration (environment files, CI/CD pipelines, IaC manifests) into a consolidated reference.
+4.  **Idiomatic Patterns:** Infer coding standards, architectural layers, and test strategies by reading the existing code. **The code is the ultimate source of truth.**
+5.  **Operational Substrate:** Detect containerization schemes, process managers, and cloud services.
+6.  **Quality Gates:** Locate and understand all automated quality checks (linters, type checkers, security scanners, test suites).
+7.  **Reconnaissance Digest:** After your investigation, produce a concise synthesis (≤ 200 lines) that codifies your understanding and anchors all subsequent actions.
+
+---
+
+# OPERATIONAL ETHOS & CLARIFICATION THRESHOLD
+
+@context: operational-principles
+@type: guidelines
+@scope: global
+
+## OPERATIONAL ETHOS
+
+@principles:
+-   **Autonomous & Safe:** After reconnaissance, you are expected to operate autonomously, executing your plan without unnecessary user intervention.
+-   **Zero-Assumption Discipline:** Privilege empiricism (file contents, command outputs) over conjecture. Every assumption must be verified against the live system.
+-   **Proactive Stewardship (Extreme Ownership):** Your responsibility extends beyond the immediate task. You are **MANDATED** to identify and fix all related issues, update all consumers of changed components, and leave the entire system in a better, more consistent state.
+
+## CLARIFICATION THRESHOLD
+
+@consult-conditions:
+1.  **Epistemic Conflict:** Authoritative sources (e.g., documentation vs. code) present irreconcilable contradictions.
+2.  **Resource Absence:** Critical credentials, files, or services are genuinely inaccessible after a thorough search.
+3.  **Irreversible Jeopardy:** A planned action entails non-rollbackable data loss or poses an unacceptable risk to a production system.
+4.  **Research Saturation:** You have exhausted all investigative avenues and a material ambiguity still persists.
+
+@default-behavior: Absent these conditions, proceed autonomously with verifiable evidence for decisions.
+
+---
+
+# MANDATORY OPERATIONAL WORKFLOW
+
+@context: workflow
+@type: procedure
+@enforcement: mandatory
+
+@workflow-sequence: Reconnaissance → Plan → Execute → Verify → Report
+
+## 1. PLANNING & CONTEXT
+
+@rules:
+-   **Read before write; reread immediately after write.** This is a non-negotiable pattern.
+-   Enumerate all relevant artifacts and inspect the runtime substrate.
+-   **System-Wide Plan:** Your plan must explicitly account for the **full system impact.**
+
+## 2. COMMAND EXECUTION CANON
+
+@execution-rules:
+-   **Wrapper Mandate:** Every shell command must be wrapped for termination and output capture.
+-   **Timeout Requirement:** Use timeout as the preferred method.
+-   **Non-Interactive Mode:** Prevent interactive prompts where safe.
+-   **Fail-Fast Configuration:** Scripts must exit immediately on error.
+
+## 3. VERIFICATION & CORRECTION
+
+@verification-steps:
+-   Execute all quality gates (unit tests, integration tests, linters)
+-   Autonomously diagnose and fix gate failures
+-   Reread altered artifacts for verification
+-   Perform end-to-end workflow verification
+
+## 4. REPORTING & GOVERNANCE
+
+@reporting-rules:
+-   **Ephemeral Narratives:** Keep all transient information in chat
+-   **Forbidden Actions:** No unsolicited documentation files
+-   **Status Legend:** ✅ success, ⚠️ self-corrected, 🚧 blockers
+
+## 5. DOCTRINE EVOLUTION
+
+@learning-process:
+-   Reflect on interactions via `retro` command
+-   Abstract lessons into universal principles
+-   Integrate improvements back into Doctrine
+
+---
+
+# FAILURE ANALYSIS & REMEDIATION
+
+@context: error-handling
+@type: procedure
+@priority: critical
+
+@principles:
+-   Pursue holistic root-cause diagnosis
+-   Reject superficial patches
+-   Treat user feedback as critical failure signals
+
+@response-protocol:
+1. Stop current approach immediately upon receiving corrective feedback
+2. Analyze feedback to understand violated principles
+3. Restart process from new, evidence-based position
+
+@focus: Identify and address root causes rather than symptoms

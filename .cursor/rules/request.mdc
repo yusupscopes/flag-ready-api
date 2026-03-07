@@ -1,0 +1,101 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+<request_template>
+<mission_overview>
+{Your feature, refactoring, or change request here. Be specific about WHAT you want and WHY it is valuable.}
+</mission_overview>
+
+<protocol_declaration>
+You will now execute this request in full compliance with your **AUTONOMOUS PRINCIPAL ENGINEER - OPERATIONAL DOCTRINE.** Each phase is mandatory. Deviations are not permitted.
+</protocol_declaration>
+
+<phases>
+<phase_0>
+## Phase 0: Reconnaissance & Mental Modeling (Read-Only)
+
+<directives>
+- **Directive:** Perform a non-destructive scan of the entire repository to build a complete, evidence-based mental model of the current system architecture, dependencies, and established patterns.
+- **Output:** Produce a concise digest (≤ 200 lines) of your findings. This digest will anchor all subsequent actions.
+- **Constraint:** **No mutations are permitted during this phase.**
+</directives>
+</phase_0>
+
+<phase_1>
+## Phase 1: Planning & Strategy
+
+<directives>
+- **Directive:** Based on your reconnaissance, formulate a clear, incremental execution plan.
+- **Plan Requirements:**
+  <requirements>
+  1. **Restate Objectives:** Clearly define the success criteria for this request.
+  2. **Identify Full Impact Surface:** Enumerate **all** files, components, services, and user workflows that will be directly or indirectly affected.
+  3. **Justify Strategy:** Propose a technical approach. Explain *why* it is the best choice, considering its alignment with existing patterns, maintainability, and simplicity.
+  </requirements>
+- **Constraint:** Invoke the **Clarification Threshold** from your Doctrine only if you encounter a critical ambiguity that cannot be resolved through further research.
+</directives>
+</phase_1>
+
+<phase_2>
+## Phase 2: Execution & Implementation
+
+<directives>
+- **Directive:** Execute your plan incrementally. Adhere strictly to all protocols defined in your **Operational Doctrine.**
+<protocols>
+- **Core Protocols in Effect:**
+  - **Read-Write-Reread:** For every file you modify, you must read it immediately before and immediately after the change.
+  - **Command Execution Canon:** All shell commands must be executed using the mandated safety wrapper.
+  - **Workspace Purity:** All transient analysis and logs remain in-chat. No unsolicited files.
+  - **System-Wide Ownership:** If you modify a shared component, you are **MANDATED** to identify and update **ALL** its consumers in this same session.
+</protocols>
+</directives>
+</phase_2>
+
+<phase_3>
+## Phase 3: Verification & Autonomous Correction
+
+<directives>
+- **Directive:** Rigorously validate your changes with fresh, empirical evidence.
+<verification_steps>
+1. Execute all relevant quality gates (unit tests, integration tests, linters, etc.).
+2. If any gate fails, you will **autonomously diagnose and fix the failure,** reporting the cause and the fix.
+3. Perform end-to-end testing of the primary user workflow(s) affected by your changes.
+</verification_steps>
+</directives>
+</phase_3>
+
+<phase_4>
+## Phase 4: Mandatory Zero-Trust Self-Audit
+
+<directives>
+- **Directive:** Your primary implementation is complete, but your work is **NOT DONE.** You will now reset your thinking and conduct a skeptical, zero-trust audit of your own work. Your memory is untrustworthy; only fresh evidence is valid.
+<audit_protocol>
+1. **Re-verify Final State:** With fresh commands, confirm the Git status is clean, all modified files are in their intended final state, and all relevant services are running correctly.
+2. **Hunt for Regressions:** Explicitly test at least one critical, related feature that you did *not* directly modify to ensure no unintended side effects were introduced.
+3. **Confirm System-Wide Consistency:** Double-check that all consumers of any changed component are working as expected.
+</audit_protocol>
+</directives>
+</phase_4>
+
+<phase_5>
+## Phase 5: Final Report & Verdict
+
+<directives>
+- **Directive:** Conclude your mission with a single, structured report.
+<report_structure>
+- **Changes Applied:** A list of all created or modified artifacts.
+- **Verification Evidence:** The commands and outputs from your autonomous testing and self-audit, proving the system is healthy.
+- **System-Wide Impact Statement:** A confirmation that all identified dependencies have been checked and are consistent.
+- **Final Verdict:** Conclude with one of the two following statements, exactly as written:
+  <verdicts>
+  - `"Self-Audit Complete. System state is verified and consistent. No regressions identified. Mission accomplished."`
+  - `"Self-Audit Complete. CRITICAL ISSUE FOUND. Halting work. [Describe issue and recommend immediate diagnostic steps]."`
+  </verdicts>
+</report_structure>
+- **Constraint:** Maintain an inline TODO ledger using ✅ / ⚠️ / 🚧 markers throughout the process.
+</directives>
+</phase_5>
+</phases>
+</request_template>
