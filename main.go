@@ -52,8 +52,13 @@ func getFlagHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Safely read from the map
 	store.RLock()
-	isEnabled := store.flags[featureName]
+	isEnabled, exists := store.flags[featureName]
 	store.RUnlock()
+
+	if !exists {
+		http.Error(w, "Unknown feature flag", http.StatusNotFound)
+		return
+	}
 
 	response := FlagResponse{
 		Feature: featureName,
