@@ -32,13 +32,24 @@ type FeatureConfig struct {
 	Percentage int  `json:"percentage"`
 }
 
+// UpdateFlagRequest is the JSON structure we expect for updates
+type UpdateFlagRequest struct {
+	Feature           string `json:"feature"`
+	Enabled           bool   `json:"enabled"`
+	RolloutPercentage int    `json:"rollout_percentage"`
+}
+
 func main() {
 	initDB()
 	initRedis()
 	defer db.Close()
 	defer rdb.Close()
 
+	// Public route (anyone can read flags)
 	http.HandleFunc("/flag", getFlagHandler)
+
+	// Protected admin route (only users with the API key can update flags)
+	http.HandleFunc("/admin/flag", adminAuthMiddleware(updateFlagHandler))
 
 	log.Println("Starting feature flag server on :8080...")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
@@ -153,6 +164,62 @@ func getFlagHandler(w http.ResponseWriter, r *http.Request) {
 	respond(w, featureName, finalState, isCached)
 }
 
+func updateFlagHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req UpdateFlagRequest
+	// Decode the incoming JSON body
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Feature == "" {
+		http.Error(w, "Feature name is required", http.StatusBadRequest)
+		return
+	}
+
+	// 1. UPDATE THE DATABASE
+	// We use an UPSERT (INSERT ... ON CONFLICT DO UPDATE) so this endpoint can 
+	// both create new flags and update existing ones.
+	query := `
+		INSERT INTO feature_flags (name, enabled, rollout_percentage) 
+		VALUES ($1, $2, $3)
+		ON CONFLICT (name) 
+		DO UPDATE SET enabled = EXCLUDED.enabled, rollout_percentage = EXCLUDED.rollout_percentage;
+	`
+	_, err := db.Exec(query, req.Feature, req.Enabled, req.RolloutPercentage)
+	if err != nil {
+		log.Printf("Database update error: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// 2. INVALIDATE THE CACHE (Crucial Step!)
+	// Instead of deleting the key, we actively save the new JSON config to Redis
+	newConfig := FeatureConfig{
+		Enabled:    req.Enabled,
+		Percentage: req.RolloutPercentage,
+	}
+	configBytes, _ := json.Marshal(newConfig)
+
+	err = rdb.Set(ctx, req.Feature, configBytes, 5*time.Minute).Err()
+	if err != nil {
+		log.Printf("Failed to update cache for %s: %v", req.Feature, err)
+		// We log the error but still return success since the DB updated correctly
+	}
+
+	log.Printf("Flag updated & cache refreshed: %s (Enabled: %v, Rollout: %d%%)", req.Feature, req.Enabled, req.RolloutPercentage)
+
+	// 3. RESPOND WITH SUCCESS
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"success","message":"Flag updated successfully"}`))
+}
+
 // Helper function to send the JSON response
 func respond(w http.ResponseWriter, feature string, enabled bool, cached bool) {
 	response := FlagResponse{
@@ -184,4 +251,31 @@ func isUserInRollout(userID string, featureName string, percentage int) bool {
 	bucket := (int(hash) % 100) + 1
 
 	return bucket <= percentage
+}
+
+// adminAuthMiddleware intercepts requests to ensure the user has the correct API key
+func adminAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// We'll read the expected key from the environment variables
+		expectedKey := os.Getenv("ADMIN_API_KEY")
+		if expectedKey == "" {
+			// A fallback for local development if we forget to set the env var
+			expectedKey = "dev-secret-key"
+		}
+
+		// The standard way to pass API keys is in the "Authorization" header
+		// Format: "Bearer YOUR_API_KEY"
+		authHeader := r.Header.Get("Authorization")
+		expectedHeader := "Bearer " + expectedKey
+
+		// If the keys don't match, block the request immediately with a 401 Unauthorized
+		if authHeader != expectedHeader {
+			log.Printf("Unauthorized access attempt to admin API from %s", r.RemoteAddr)
+			http.Error(w, "Unauthorized: Invalid or missing API Key", http.StatusUnauthorized)
+			return
+		}
+
+		// If the key is correct, pass the request on to the actual handler (updateFlagHandler)
+		next(w, r)
+	}
 }
