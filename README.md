@@ -1,5 +1,7 @@
 # Feature Flag System
 
+[![Go Tests](https://github.com/yusupscopes/flag-ready-api/actions/workflows/ci.yml/badge.svg)](https://github.com/yusupscopes/flag-ready-api/actions/workflows/ci.yml)
+
 A robust, production-ready feature flag (toggle) service built in Go. This project demonstrates how modern engineering teams safely test and roll out new features without deploying new code.
 
 ## 🚀 Key Features & Learning Outcomes
