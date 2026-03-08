@@ -33,6 +33,7 @@ services:
       # Tell the API how to connect to the 'db' service
       DATABASE_URL: postgres://flag_user:supersecretpassword@db:5432/flag_db?sslmode=disable
       REDIS_URL: redis:6379
+      ADMIN_API_KEY: my-super-secure-production-key-999
     depends_on:
       db:
         condition: service_healthy
