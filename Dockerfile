@@ -1,21 +1,30 @@
+# syntax=docker/dockerfile:1
+
 # Stage 1: Build the Go binary
 FROM golang:1.26.1-alpine AS builder
+
 WORKDIR /app
-COPY go.mod ./
-COPY go.sum ./
+
+COPY go.mod go.sum ./
+
 RUN go mod download
+
 COPY . .
 # Build a statically linked binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o flag-service .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /flag-service
+
+FROM builder AS tester
+RUN go test -v ./...
 
 # Stage 2: Create the minimal production image
-FROM alpine:3.19
-WORKDIR /app
-COPY --from=builder /app/flag-service .
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-RUN chown appuser:appgroup flag-service
+FROM gcr.io/distroless/base-debian11 AS runner
 
-USER appuser
+WORKDIR /
+
+COPY --from=builder /flag-service /flag-service
 
 EXPOSE 8080
-CMD ["./flag-service"]
+
+USER nonroot:nonroot
+
+ENTRYPOINT ["/flag-service"]
