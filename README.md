@@ -38,7 +38,7 @@ Make sure you have [Docker](https://docs.docker.com/get-docker/) and Docker Comp
    ```bash
    docker-compose up --build
    ```
-   This will spin up the PostgreSQL database, the Redis cache, and the Go API on port `8080`.
+   This will spin up the PostgreSQL database, the Redis cache, and the Go API on port `3000`.
 
 ## 💻 API Usage
 
@@ -49,7 +49,7 @@ To check if a feature is enabled for a specific user, make a `GET` request to th
 **Request:**
 
 ```bash
-curl "http://localhost:8080/flag?name=new_dashboard&user_id=user_123"
+curl "http://localhost:3000/flag?name=new_dashboard&user_id=user_123"
 ```
 
 **Response:**
@@ -71,7 +71,7 @@ To create or update a flag, send a `POST` request to the `/admin/flag` endpoint.
 **Request:**
 
 ```bash
-curl -X POST http://localhost:8080/admin/flag \
+curl -X POST http://localhost:3000/admin/flag \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer my-super-secure-production-key-999" \
      -d '{
