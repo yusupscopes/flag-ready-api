@@ -45,16 +45,32 @@ func main() {
 	defer db.Close()
 	defer rdb.Close()
 
+	mux := http.NewServeMux()
 	// Public route (anyone can read flags)
-	http.HandleFunc("/flag", getFlagHandler)
-
+	mux.HandleFunc("/flag", getFlagHandler)
 	// Protected admin route (only users with the API key can update flags)
-	http.HandleFunc("/admin/flag", adminAuthMiddleware(updateFlagHandler))
+	mux.HandleFunc("/admin/flag", adminAuthMiddleware(updateFlagHandler))
+	// Protected admin route: list all features and their status (for dashboard)
+	mux.HandleFunc("/admin/features", adminAuthMiddleware(listFeaturesHandler))
 
-	log.Println("Starting feature flag server on :8080...")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	log.Println("Starting feature flag server on :3000...")
+	if err := http.ListenAndServe(":3000", corsMiddleware(mux)); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
+}
+
+// corsMiddleware sets CORS headers on all API responses and handles OPTIONS preflight.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func initRedis() {
@@ -218,6 +234,45 @@ func updateFlagHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"success","message":"Flag updated successfully"}`))
+}
+
+// listFeaturesHandler returns all feature flags (name, enabled) for the dashboard. No Redis; list is from DB.
+func listFeaturesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	rows, err := db.Query("SELECT name, enabled FROM feature_flags ORDER BY name")
+	if err != nil {
+		log.Printf("Database list error: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var list []FlagResponse
+	for rows.Next() {
+		var name string
+		var enabled bool
+		if err := rows.Scan(&name, &enabled); err != nil {
+			log.Printf("Database scan error: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		list = append(list, FlagResponse{Feature: name, Enabled: enabled, Cached: false})
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("Database rows error: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if list == nil {
+		list = []FlagResponse{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
 }
 
 // Helper function to send the JSON response

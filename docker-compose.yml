@@ -28,7 +28,7 @@ services:
   api:
     build: .
     ports:
-      - "8080:8080"
+      - "3000:3000"
     environment:
       # Tell the API how to connect to the 'db' service
       DATABASE_URL: postgres://flag_user:supersecretpassword@db:5432/flag_db?sslmode=disable

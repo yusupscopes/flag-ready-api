@@ -4,6 +4,6 @@
 build:
 	docker build -t flag-api .
 
-# Run the container, mapping port 8080
+# Run the container, mapping port 3000
 run:
-	docker run -p 8080:8080 flag-api
+	docker run -p 3000:3000 flag-api
