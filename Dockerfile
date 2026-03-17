@@ -22,6 +22,7 @@ FROM gcr.io/distroless/base-debian11 AS runner
 WORKDIR /
 
 COPY --from=builder /flag-service /flag-service
+COPY migrations ./migrations
 EXPOSE 3000
 
 USER nonroot:nonroot

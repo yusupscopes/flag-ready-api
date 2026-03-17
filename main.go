@@ -12,6 +12,9 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
 var (
@@ -90,7 +93,6 @@ func initRedis() {
 }
 
 func initDB() {
-	// ... (Keep your exact initDB code from Phase 2 here) ...
 	var err error
 	connStr := os.Getenv("DATABASE_URL")
 	if connStr == "" {
@@ -106,21 +108,28 @@ func initDB() {
 		log.Fatalf("Failed to ping DB: %v", err)
 	}
 
-	createTableQuery := `
-	CREATE TABLE IF NOT EXISTS feature_flags (
-		name VARCHAR(255) PRIMARY KEY,
-		enabled BOOLEAN NOT NULL,
-		rollout_percentage INT DEFAULT 100
-	);
-	-- Notice we added a 50% rollout for the new_dashboard
-	INSERT INTO feature_flags (name, enabled, rollout_percentage) VALUES ('new_dashboard', true, 50) ON CONFLICT DO NOTHING;
-	INSERT INTO feature_flags (name, enabled, rollout_percentage) VALUES ('beta_checkout', false, 0) ON CONFLICT DO NOTHING;
-	`
-	_, err = db.Exec(createTableQuery)
+	log.Println("Database connected. Running migrations...")
+
+	// Initialize the Postgres driver for the migration engine
+	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
-		log.Fatalf("Failed to initialize database schema: %v", err)
+		log.Fatalf("Could not start sql migration driver: %v", err)
 	}
-	log.Println("Database initialized successfully!")
+
+	// Tell the engine where to find our .sql files (the "file://migrations" folder)
+	m, err := migrate.NewWithDatabaseInstance(
+		"file://migrations",
+		"postgres", driver)
+	if err != nil {
+		log.Fatalf("Migration initialization failed: %v", err)
+	}
+
+	// Run the UP migrations
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		log.Fatalf("Migration failed to apply: %v", err)
+	}
+
+	log.Println("Database migrated successfully!")
 }
 
 func getFlagHandler(w http.ResponseWriter, r *http.Request) {
