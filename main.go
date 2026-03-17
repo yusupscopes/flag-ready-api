@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 	"hash/crc32"
 
@@ -42,9 +44,8 @@ type UpdateFlagRequest struct {
 func main() {
 	initDB()
 	initRedis()
-	defer db.Close()
-	defer rdb.Close()
 
+    // 1. Setup our router
 	mux := http.NewServeMux()
 	// Public route (anyone can read flags)
 	mux.HandleFunc("/flag", getFlagHandler)
@@ -53,10 +54,45 @@ func main() {
 	// Protected admin route: list all features and their status (for dashboard)
 	mux.HandleFunc("/admin/features", adminAuthMiddleware(listFeaturesHandler))
 
-	log.Println("Starting feature flag server on :3000...")
-	if err := http.ListenAndServe(":3000", corsMiddleware(mux)); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+	// 2. Create a custom HTTP server instance
+	srv := &http.Server{
+		Addr: ":3000",
+		Handler: mux,
 	}
+
+	// 3. Create a channel to listen for OS signals (like Ctrl+C or Docker stop)
+	stopChan := make(chan os.Signal, 1)
+	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
+
+	// 4. Start the server in a separate Goroutine (background thread)
+	// This allows the main thread to keep moving forward to the 'wait' block.
+	go func() {
+		log.Println("Starting feature flag server on :3000...")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed to start: %v", err)
+		}
+	}()
+
+	// 5. Block the main thread here until a signal comes down the channel
+	<-stopChan
+	log.Println("\nShutdown signal received. Shutting down gracefully...")
+
+	// 6. Create a deadline context. We give the server 10 seconds to finish 
+	// current requests before we forcefully kill it.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// 7. Tell the server to stop accepting new requests and finish existing ones
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("Server forced to shutdown abruptly: %v", err)
+	}
+
+	// 8. Safely close our persistent connections
+	log.Println("Closing database and Redis connections...")
+	db.Close()
+	rdb.Close()
+
+	log.Println("Server exited cleanly. Goodbye!")
 }
 
 // corsMiddleware sets CORS headers on all API responses and handles OPTIONS preflight.
