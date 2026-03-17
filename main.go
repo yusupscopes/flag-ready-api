@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 	"hash/crc32"
 
@@ -42,9 +44,8 @@ type UpdateFlagRequest struct {
 func main() {
 	initDB()
 	initRedis()
-	defer db.Close()
-	defer rdb.Close()
 
+    // 1. Setup our router
 	mux := http.NewServeMux()
 	// Public route (anyone can read flags)
 	mux.HandleFunc("/flag", getFlagHandler)
@@ -53,10 +54,45 @@ func main() {
 	// Protected admin route: list all features and their status (for dashboard)
 	mux.HandleFunc("/admin/features", adminAuthMiddleware(listFeaturesHandler))
 
-	log.Println("Starting feature flag server on :3000...")
-	if err := http.ListenAndServe(":3000", corsMiddleware(mux)); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+	// 2. Create a custom HTTP server instance
+	srv := &http.Server{
+		Addr: ":3000",
+		Handler: corsMiddleware(mux),
 	}
+
+	// 3. Create a channel to listen for OS signals (like Ctrl+C or Docker stop)
+	stopChan := make(chan os.Signal, 1)
+	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
+
+	// 4. Start the server in a separate Goroutine (background thread)
+	// This allows the main thread to keep moving forward to the 'wait' block.
+	go func() {
+		log.Println("Starting feature flag server on :3000...")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed to start: %v", err)
+		}
+	}()
+
+	// 5. Block the main thread here until a signal comes down the channel
+	<-stopChan
+	log.Println("\nShutdown signal received. Shutting down gracefully...")
+
+	// 6. Create a deadline context. We give the server 10 seconds to finish 
+	// current requests before we forcefully kill it.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// 7. Tell the server to stop accepting new requests and finish existing ones
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Server forced to shutdown abruptly: %v", err)
+	}
+
+	// 8. Safely close our persistent connections
+	log.Println("Closing database and Redis connections...")
+	db.Close()
+	rdb.Close()
+
+	log.Println("Server exited cleanly. Goodbye!")
 }
 
 // corsMiddleware sets CORS headers on all API responses and handles OPTIONS preflight.
@@ -129,6 +165,8 @@ func getFlagHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	reqCtx := r.Context()
+
 	featureName := r.URL.Query().Get("name")
 	userID := r.URL.Query().Get("user_id")
 
@@ -141,7 +179,7 @@ func getFlagHandler(w http.ResponseWriter, r *http.Request) {
 	isCached := false
 
 	// 1. TRY THE CACHE FIRST
-	cachedValue, err := rdb.Get(ctx, featureName).Result()
+	cachedValue, err := rdb.Get(reqCtx, featureName).Result()
 	if err == nil {
 		// CACHE HIT: Parse the JSON string from Redis back into our struct
 		json.Unmarshal([]byte(cachedValue), &config)
@@ -150,7 +188,7 @@ func getFlagHandler(w http.ResponseWriter, r *http.Request) {
 		// 2. CACHE MISS: QUERY THE DATABASE
 		log.Printf("Cache miss for %s, querying database...", featureName)
 		
-		err = db.QueryRow("SELECT enabled, rollout_percentage FROM feature_flags WHERE name = $1", featureName).Scan(&config.Enabled, &config.Percentage)
+		err = db.QueryRowContext(reqCtx, "SELECT enabled, rollout_percentage FROM feature_flags WHERE name = $1", featureName).Scan(&config.Enabled, &config.Percentage)
 		
 		if err != nil {
 			if err == sql.ErrNoRows {
@@ -166,7 +204,7 @@ func getFlagHandler(w http.ResponseWriter, r *http.Request) {
 		// 3. SAVE TO CACHE FOR NEXT TIME
 		// Convert the struct to JSON and store it in Redis for 5 minutes
 		configBytes, _ := json.Marshal(config)
-		rdb.Set(ctx, featureName, configBytes, 5*time.Minute)
+		rdb.Set(reqCtx, featureName, configBytes, 5*time.Minute)
 	}
 
 	// 4. CALCULATE FINAL STATE IN MEMORY
@@ -185,6 +223,8 @@ func updateFlagHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	reqCtx := r.Context()
 
 	var req UpdateFlagRequest
 	// Decode the incoming JSON body
@@ -207,7 +247,7 @@ func updateFlagHandler(w http.ResponseWriter, r *http.Request) {
 		ON CONFLICT (name) 
 		DO UPDATE SET enabled = EXCLUDED.enabled, rollout_percentage = EXCLUDED.rollout_percentage;
 	`
-	_, err := db.Exec(query, req.Feature, req.Enabled, req.RolloutPercentage)
+	_, err := db.ExecContext(reqCtx, query, req.Feature, req.Enabled, req.RolloutPercentage)
 	if err != nil {
 		log.Printf("Database update error: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -222,7 +262,7 @@ func updateFlagHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	configBytes, _ := json.Marshal(newConfig)
 
-	err = rdb.Set(ctx, req.Feature, configBytes, 5*time.Minute).Err()
+	err = rdb.Set(reqCtx, req.Feature, configBytes, 5*time.Minute).Err()
 	if err != nil {
 		log.Printf("Failed to update cache for %s: %v", req.Feature, err)
 		// We log the error but still return success since the DB updated correctly
@@ -243,7 +283,9 @@ func listFeaturesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query("SELECT name, enabled FROM feature_flags ORDER BY name")
+	reqCtx := r.Context()
+
+	rows, err := db.QueryContext(reqCtx, "SELECT name, enabled FROM feature_flags ORDER BY name")
 	if err != nil {
 		log.Printf("Database list error: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
