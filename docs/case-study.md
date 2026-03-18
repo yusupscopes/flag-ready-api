@@ -59,8 +59,8 @@ Engineering teams commonly face:
   - Redis (cache sync)
 - Guarantees:
   - ⚡ Sub-millisecond response time
-  - ✅ 100% cache hit rate
-  - 🚫 Zero stale data
+  - ✅ Near-100% cache hit rate (after cache warming)
+  - 🚫 Minimal stale data
 
 #### 🔹 Graceful Shutdown
 
@@ -139,7 +139,7 @@ Engineering teams commonly face:
 
 - ⚡ Sub-millisecond feature evaluation
 - 🎯 Consistent user experience via deterministic hashing
-- 🔁 Zero cache inconsistency with write-through strategy
+- 🔁 Minimal cache inconsistency with write-through strategy
 - 🛡️ Secure admin endpoints with API key protection
 - 🔍 Production-ready observability
 - 🔄 Safe and controlled feature rollouts
