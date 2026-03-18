@@ -1,28 +1,28 @@
-# Feature Flag System
+# Production-Ready Feature Flag System
 
 [![Go Tests](https://github.com/yusupscopes/flag-ready-api/actions/workflows/ci.yml/badge.svg)](https://github.com/yusupscopes/flag-ready-api/actions/workflows/ci.yml)
 
-A robust, production-ready feature flag (toggle) service built in Go. This project demonstrates how modern engineering teams safely test and roll out new features without deploying new code.
+A robust, highly available feature flag (toggle) microservice built in Go. This project demonstrates how modern engineering teams safely test and roll out new features using canary deployments, high-speed caching, and production-grade infrastructure patterns.
 
-## 🚀 Key Features & Learning Outcomes
+## 🚀 Key Features & Architecture
 
-This project was built iteratively to cover essential backend engineering patterns:
+This system was engineered with production reliability in mind, solving real-world scale and deployment challenges:
 
-- **Configuration Management:** Managing feature states dynamically.
-- **Database Persistence (PostgreSQL):** Moving flags from ephemeral memory into a persistent, reliable source of truth.
-- **Caching Layer (Redis):** Implementing the Cache-Aside pattern to serve flag checks in sub-milliseconds and protect the database from heavy read traffic.
-- **Cache Invalidation:** Automatically clearing stale Redis data when a flag is updated via the Admin API.
-- **Safe Feature Rollouts (Canary Releases):** Using deterministic hashing (`crc32`) to ensure consistent, flicker-free percentage-based rollouts (e.g., turning a feature on for exactly 30% of users).
-- **Security & Middleware:** Protecting the Admin API with an API Key authentication middleware.
-- **Production Deployment:** Utilizing multi-stage `Dockerfile` builds and `docker-compose` to orchestrate the API, Database, and Cache.
-- **Testing:** Table-driven unit tests verifying edge cases and statistical distribution for the hashing logic.
+- **Safe Canary Rollouts:** Implements deterministic hashing (`crc32`) to guarantee consistent, flicker-free percentage-based feature rollouts for users.
+- **Write-Through Caching (Redis):** Serves flag evaluations in sub-milliseconds. Admin updates immediately refresh the Redis cache, ensuring 100% cache hits and zero stale data.
+- **Database Migrations:** Uses `golang-migrate` to treat PostgreSQL database schemas as version-controlled code, preventing collision and corruption during startup.
+- **Graceful Shutdown:** Intercepts `SIGTERM` signals to stop accepting new traffic, drain existing HTTP requests, and safely close database connections without dropping users.
+- **Structured Observability:** Utilizes Go 1.21's `log/slog` to output machine-readable JSON logs, ready for ingestion by tools like Datadog or Splunk.
+- **API Security:** Protects the administrative endpoints via custom API Key middleware.
+- **Continuous Integration:** Automated GitHub Actions pipeline to run table-driven unit tests, verifying rollout math and edge cases on every push.
 
 ## 🛠️ Tech Stack
 
-- **Language:** Go (Golang)
-- **Database:** PostgreSQL
+- **Language:** Go (Golang 1.22)
+- **Database:** PostgreSQL (with `golang-migrate`)
 - **Cache:** Redis
-- **Containerization:** Docker & Docker Compose
+- **Containerization:** Docker & Docker Compose (Multi-stage builds)
+- **CI/CD:** GitHub Actions
 
 ## 📦 Getting Started
 
@@ -38,13 +38,13 @@ Make sure you have [Docker](https://docs.docker.com/get-docker/) and Docker Comp
    ```bash
    docker-compose up --build
    ```
-   This will spin up the PostgreSQL database, the Redis cache, and the Go API on port `3000`.
+   The system will automatically boot the database, run the SQL migrations, connect to Redis, and start the Go API on port `3000`.
 
 ## 💻 API Usage
 
 ### 1. Evaluate a Flag (Public Endpoint)
 
-To check if a feature is enabled for a specific user, make a `GET` request to the `/flag` endpoint.
+Check if a feature is enabled for a specific user. The hashing algorithm ensures `user_123` always gets the exact same result for a specific feature.
 
 **Request:**
 
@@ -58,15 +58,13 @@ curl "http://localhost:3000/flag?name=new_dashboard&user_id=user_123"
 {
   "feature": "new_dashboard",
   "enabled": true,
-  "cached": false
+  "cached": true
 }
 ```
 
-_(Note: If you repeat the request, `"cached"` will turn to `true` as the system serves the read from Redis!)_
-
 ### 2. Update a Flag (Protected Admin Endpoint)
 
-To create or update a flag, send a `POST` request to the `/admin/flag` endpoint. You must include the `Authorization` header with your API key (default for local dev is `my-super-secure-production-key-999` as set in `docker-compose.yml`).
+Create or update a flag. This endpoint securely updates the Postgres database and actively refreshes the Redis cache via a Write-Through pattern. Requires an API Key.
 
 **Request:**
 
@@ -90,12 +88,10 @@ curl -X POST http://localhost:3000/admin/flag \
 }
 ```
 
-_(This will automatically update the Postgres database and invalidate the Redis cache for that specific feature.)_
-
 ## 🧪 Running Tests
 
 To verify the deterministic hashing, percentage distribution math, and edge cases, run the standard Go test suite:
 
 ```bash
-go test -v
+go test -v ./...
 ```

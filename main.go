@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -45,6 +45,12 @@ type UpdateFlagRequest struct {
 }
 
 func main() {
+	// 1. Initialize Structured JSON Logging
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
+	slog.Info("Initializing application...")
+	
 	initDB()
 	initRedis()
 
@@ -70,15 +76,16 @@ func main() {
 	// 4. Start the server in a separate Goroutine (background thread)
 	// This allows the main thread to keep moving forward to the 'wait' block.
 	go func() {
-		log.Println("Starting feature flag server on :3000...")
+		slog.Info("Starting feature flag server on :3000")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed to start: %v", err)
+			slog.Error("Server failed to start", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	// 5. Block the main thread here until a signal comes down the channel
 	<-stopChan
-	log.Println("\nShutdown signal received. Shutting down gracefully...")
+	slog.Info("Shutdown signal received. Shutting down gracefully...")
 
 	// 6. Create a deadline context. We give the server 10 seconds to finish 
 	// current requests before we forcefully kill it.
@@ -87,15 +94,15 @@ func main() {
 
 	// 7. Tell the server to stop accepting new requests and finish existing ones
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Server forced to shutdown abruptly: %v", err)
+		slog.Error("Server forced to shutdown abruptly", "error", err)
 	}
 
 	// 8. Safely close our persistent connections
-	log.Println("Closing database and Redis connections...")
+	slog.Info("Closing database and Redis connections...")
 	db.Close()
 	rdb.Close()
 
-	log.Println("Server exited cleanly. Goodbye!")
+	slog.Info("Server exited cleanly. Goodbye!")
 }
 
 // corsMiddleware sets CORS headers on all API responses and handles OPTIONS preflight.
@@ -123,9 +130,10 @@ func initRedis() {
 	})
 
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
+		slog.Error("Failed to connect to Redis", "error", err)
+		os.Exit(1)
 	}
-	log.Println("Redis initialized successfully!")
+	slog.Info("Redis initialized successfully")
 }
 
 func initDB() {
@@ -137,19 +145,22 @@ func initDB() {
 
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
-		log.Fatalf("Failed to connect to DB: %v", err)
+		slog.Error("Failed to connect to DB", "error", err)
+		os.Exit(1)
 	}
 
 	if err = db.Ping(); err != nil {
-		log.Fatalf("Failed to ping DB: %v", err)
+		slog.Error("Failed to ping DB", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("Database connected. Running migrations...")
+	slog.Info("Database connected. Running migrations...")
 
 	// Initialize the Postgres driver for the migration engine
 	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
-		log.Fatalf("Could not start sql migration driver: %v", err)
+		slog.Error("Could not start sql migration driver", "error", err)
+		os.Exit(1)
 	}
 
 	// Tell the engine where to find our .sql files (the "file://migrations" folder)
@@ -157,15 +168,17 @@ func initDB() {
 		"file://migrations",
 		"postgres", driver)
 	if err != nil {
-		log.Fatalf("Migration initialization failed: %v", err)
+		slog.Error("Migration initialization failed", "error", err)
+		os.Exit(1)
 	}
 
 	// Run the UP migrations
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("Migration failed to apply: %v", err)
+		slog.Error("Migration failed to apply", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("Database migrated successfully!")
+	slog.Info("Database migrated successfully")
 }
 
 func getFlagHandler(w http.ResponseWriter, r *http.Request) {
@@ -195,7 +208,7 @@ func getFlagHandler(w http.ResponseWriter, r *http.Request) {
 		isCached = true
 	} else {
 		// 2. CACHE MISS: QUERY THE DATABASE
-		log.Printf("Cache miss for %s, querying database...", featureName)
+		slog.Info("Cache miss, querying database", "feature", featureName)
 		
 		err = db.QueryRowContext(reqCtx, "SELECT enabled, rollout_percentage FROM feature_flags WHERE name = $1", featureName).Scan(&config.Enabled, &config.Percentage)
 		
@@ -204,7 +217,7 @@ func getFlagHandler(w http.ResponseWriter, r *http.Request) {
 				config.Enabled = false
 				config.Percentage = 0
 			} else {
-				log.Printf("Database error: %v", err)
+				slog.Error("Database error", "error", err)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 				return
 			}
@@ -258,7 +271,7 @@ func updateFlagHandler(w http.ResponseWriter, r *http.Request) {
 	`
 	_, err := db.ExecContext(reqCtx, query, req.Feature, req.Enabled, req.RolloutPercentage)
 	if err != nil {
-		log.Printf("Database update error: %v", err)
+		slog.Error("Database update error", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -273,11 +286,11 @@ func updateFlagHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = rdb.Set(reqCtx, req.Feature, configBytes, 5*time.Minute).Err()
 	if err != nil {
-		log.Printf("Failed to update cache for %s: %v", req.Feature, err)
+		slog.Error("Failed to update cache", "feature", req.Feature, "error", err)
 		// We log the error but still return success since the DB updated correctly
 	}
 
-	log.Printf("Flag updated & cache refreshed: %s (Enabled: %v, Rollout: %d%%)", req.Feature, req.Enabled, req.RolloutPercentage)
+	slog.Info("Flag updated & cache refreshed", "feature", req.Feature, "enabled", req.Enabled, "rollout_percentage", req.RolloutPercentage)
 
 	// 3. RESPOND WITH SUCCESS
 	w.Header().Set("Content-Type", "application/json")
@@ -296,7 +309,7 @@ func listFeaturesHandler(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := db.QueryContext(reqCtx, "SELECT name, enabled FROM feature_flags ORDER BY name")
 	if err != nil {
-		log.Printf("Database list error: %v", err)
+		slog.Error("Database list error", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -307,14 +320,14 @@ func listFeaturesHandler(w http.ResponseWriter, r *http.Request) {
 		var name string
 		var enabled bool
 		if err := rows.Scan(&name, &enabled); err != nil {
-			log.Printf("Database scan error: %v", err)
+			slog.Error("Database scan error", "error", err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 		list = append(list, FlagResponse{Feature: name, Enabled: enabled, Cached: false})
 	}
 	if err := rows.Err(); err != nil {
-		log.Printf("Database rows error: %v", err)
+		slog.Error("Database rows error", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -376,7 +389,7 @@ func adminAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		// If the keys don't match, block the request immediately with a 401 Unauthorized
 		if authHeader != expectedHeader {
-			log.Printf("Unauthorized access attempt to admin API from %s", r.RemoteAddr)
+			slog.Warn("Unauthorized access attempt to admin API", "remote_addr", r.RemoteAddr)
 			http.Error(w, "Unauthorized: Invalid or missing API Key", http.StatusUnauthorized)
 			return
 		}
